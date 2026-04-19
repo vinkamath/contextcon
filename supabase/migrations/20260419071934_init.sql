@@ -1,4 +1,6 @@
--- Apply in the Supabase SQL editor.
+-- Initial schema for Riffle.
+-- Idempotent so `supabase db push` is safe against a database that already has
+-- an earlier hand-applied version of this schema.
 
 create table if not exists companies (
   id text primary key,
@@ -18,9 +20,15 @@ create table if not exists decision_makers (
   company_id text references companies(id),
   name text,
   title text,
+  linkedin_url text,
   verified_email text,
-  enriched_at timestamptz
+  enriched_at timestamptz,
+  raw_enrich jsonb
 );
+
+alter table decision_makers
+  add column if not exists linkedin_url text,
+  add column if not exists raw_enrich jsonb;
 
 create table if not exists candidates (
   id text primary key,
