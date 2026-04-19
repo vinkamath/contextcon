@@ -3,7 +3,7 @@ import CompanyCard from "./company-card";
 
 export default function Home() {
   return (
-    <main className="mx-auto max-w-3xl px-6 py-16">
+    <main className="mx-auto max-w-5xl px-6 py-16">
       <header className="mb-12">
         <h1 className="text-4xl font-semibold tracking-tight">Riffle</h1>
         <p className="mt-3 text-neutral-400">
