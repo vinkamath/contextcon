@@ -137,6 +137,26 @@ export type PersonSearchResponse = {
   total_count: number | null;
 };
 
+// ---------- Web Fetch (scrape) ----------
+
+export type WebFetchRequest = { urls: string[] };
+
+export type WebFetchResult =
+  | {
+      success: true;
+      url: string;
+      timestamp?: number;
+      pageTitle?: string;
+      content: string;
+    }
+  | {
+      success: false;
+      url: string;
+      error: string;
+    };
+
+export type WebFetchResponse = WebFetchResult[];
+
 // ---------- Endpoints ----------
 
 export const crustdata = {
@@ -150,4 +170,6 @@ export const crustdata = {
   jobSearch: (body: unknown) => post<unknown>("/job/search", body),
   webSearchLive: (body: unknown) => post<unknown>("/web/search/live", body),
   webEnrichLive: (body: unknown) => post<unknown>("/web/enrich/live", body),
+  webFetch: (body: WebFetchRequest) =>
+    post<WebFetchResponse>("/screener/web-fetch", body),
 };
