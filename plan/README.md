@@ -11,14 +11,35 @@ hiring engineers and PMs but no designers is a stronger signal than a design JD 
 
 ---
 
+## MVP scope (start here)
+
+Demo-first. Everything that risks breaking live on stage is cut or cached.
+
+**In scope for MVP:**
+- Hardcoded watchlist of 2 demo companies (`lib/demo-companies.ts`)
+- Stages 1–4 run end-to-end against those 2 companies
+- Web UI on Vercel: company list → "Run pipeline" button → rendered brief
+- Supabase caches every stage output so the demo is instant on re-run
+
+**Deferred (post-MVP, see bottom of doc):**
+- Phase 0: trigger detection (job posting scans, funding deltas)
+- Phase 1: interactive watchlist refinement loop
+- Live email sending
+
+**Demo story:** "We pre-identified [Company] as hiring engineers without a designer.
+Watch us run our pipeline live — decision makers, candidates, portfolio scoring, brief."
+
+---
+
 ## Stack
 
-- **Language:** Python
+- **Framework:** Next.js 15 (App Router) + TypeScript
+- **Hosting:** Vercel (required — competition needs a hosted demo)
+- **UI:** Tailwind CSS; shadcn/ui components added as needed
 - **APIs:** Crustdata (company search, person search, enrich, web search, web fetch, job search)
-- **LLM:** Anthropic Claude (claude-sonnet-4-20250514) for scoring, brief generation
-- **Storage:** Supabase (watchlist state, enrichment cache, candidate results)
-- **Scheduler:** simple cron or manual trigger for hackathon
-- **Env:** Railway or local; keep it simple for the demo
+- **LLM:** Anthropic Claude (`claude-sonnet-4-6`) for scoring, extraction, brief generation
+- **Storage:** Supabase (Postgres — watchlist, enrichment cache, candidate results)
+- **Secrets:** Vercel env vars (`CRUSTDATA_API_KEY`, `ANTHROPIC_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`)
 
 All Crustdata endpoints are at `https://api.crustdata.com` with headers:
 ```
@@ -31,87 +52,41 @@ x-api-version: 2025-11-01
 ## System overview
 
 ```
-[TRIGGER] → [WATCHLIST LOOP] → [STAGE 1: Decision makers]
-                                → [STAGE 2: Source candidates]
-                                → [STAGE 3: Qualify portfolios]
-                                → [STAGE 4: Deliver brief]
+[UI: company list] → [API: /api/pipeline/:companyId]
+                          → Stage 1: Decision makers
+                          → Stage 2: Source candidates
+                          → Stage 3: Qualify portfolios
+                          → Stage 4: Generate brief
+                          → [UI: rendered brief]
 ```
+
+All stages are server-side (Next.js API routes / Server Actions). Results are written to
+Supabase after each stage so subsequent runs hit cache.
 
 ---
 
-## Phase 0 — Trigger detection
+## MVP: Hardcoded watchlist
 
-**Goal:** Detect companies that have entered a "hiring but no designer" state.
+`lib/demo-companies.ts` exports 2 companies we've pre-qualified by hand. Each entry has
+the shape Crustdata enrich returns, so the pipeline is agnostic to whether the watchlist
+came from hardcoding or from Phase 0/1.
 
-**Primary trigger — non-design job postings:**
-- Call `POST /job/search` filtered to eng/PM/sales roles
-- For each company returned, check if any active design JD exists (same API)
-- If eng/PM jobs exist but zero design jobs → company qualifies as a trigger candidate
-
-**Secondary signals (used for scoring, not gating):**
-- Funding round detected: `company.funding_rounds` field changed (new seed/pre-A entry)
-- Headcount growth spike: headcount delta > threshold over 30 days (from `/company/enrich`)
-- Web traffic inflection: month-on-month web traffic growth above threshold
-
-**Cron fallback:** Weekly full re-scan of the tracked company universe as a safety net.
-
-**Implementation notes:**
-- Store last-seen state per company in Supabase (`companies` table) to detect deltas
-- On first run, seed with `POST /company/search` using firmographic filters (see Phase 1)
-- Trigger produces a list of `company_id`s passed into the watchlist loop
-
----
-
-## Phase 1 — Iterative watchlist refinement (human-in-the-loop)
-
-**Goal:** Build and refine a list of target companies using Crustdata company search.
-This loop runs interactively until the user is satisfied, then locks the list.
-
-**Step 1 — Define filters and search:**
-
-Call `POST /company/search` with firmographic filters. Starting filter set:
-```json
-{
-  "funding_stage": ["seed", "pre_seed"],
-  "headcount_min": 5,
-  "headcount_max": 50,
-  "industry": ["saas", "fintech", "healthtech", "consumer"],
-  "location": ["United States"]
-}
+```ts
+// lib/demo-companies.ts
+export const DEMO_COMPANIES = [
+  { id: "crustdata_co_1", name: "...", domain: "...", funding_stage: "seed", headcount: 18 },
+  { id: "crustdata_co_2", name: "...", domain: "...", funding_stage: "pre_seed", headcount: 11 },
+];
 ```
 
-**Step 2 — Enrich and score each result:**
-
-For each company from search, call `POST /company/enrich` and compute a qualification score:
-
-| Signal | Weight | Source |
-|---|---|---|
-| Has active non-design JDs | 30% | `/job/search` |
-| No current design headcount | 25% | `/company/enrich` employee breakdown |
-| Web traffic growth MoM > 10% | 20% | `/company/enrich` web_traffic |
-| Funding stage is seed/pre-A | 15% | `/company/enrich` funding_rounds |
-| Headcount 10–50 | 10% | `/company/enrich` headcount |
-
-**Step 3 — Present results for human review:**
-
-Print a ranked table: `company_name | score | headcount | funding | why_qualified`
-
-**Step 4 — Human decision:**
-- User can adjust filters and re-run (loop back to Step 1)
-- User can manually include/exclude specific companies
-- When satisfied, user types "lock" → list is written to Supabase `watchlist` table
-
-**Implementation notes:**
-- Cache enrichment results in Supabase by `company_id` — do not re-call enrich for
-  companies already scored in this session
-- Persist filter configs so each iteration diffs cleanly against the last
-- For the hackathon demo: a simple CLI loop is sufficient (rich table output)
+On first boot, `app/page.tsx` upserts these into Supabase `companies` with
+`on_watchlist = true`. Everything downstream reads from Supabase.
 
 ---
 
 ## Stage 1 — Find decision makers
 
-**Goal:** For each company on the locked watchlist, find the CEO, CPO, or CTO.
+**Goal:** For each company on the watchlist, find the CEO, CPO, or CTO.
 
 **API call:** `POST /person/search` filtered by company and title seniority:
 ```json
@@ -146,10 +121,9 @@ rubric — not a specific role. Candidates are sourced once and re-ranked per co
 ```
 
 **Implementation notes:**
-- Title normalisation is a known bottleneck. Use Claude to canonicalise titles before
-  filtering: "Senior Product Designer", "Product Design Lead", "UX/UI Designer" → same bucket
-- Pull top 50 candidates, enrich all via `POST /person/enrich` (employment history, skills)
-- Store in `candidates` table in Supabase
+- Title normalisation: use Claude to canonicalise titles before filtering
+- Pull top 50, enrich all via `POST /person/enrich`, store in `candidates` table
+- Sourcing runs once across the whole watchlist — not per company
 
 ---
 
@@ -159,35 +133,27 @@ rubric — not a specific role. Candidates are sourced once and re-ranked per co
 founding designer rubric.
 
 **Step 1 — Find portfolio URL:**
-
 Call `POST /web/search/live` with query: `"{name} {current_company} product designer portfolio"`
-
-Parse the top result for a portfolio domain (Notion, Cargo, Webflow, personal site, etc.).
-Fallback: check `/person/enrich` response for any social/portfolio links first.
+Parse the top result for a portfolio domain. Fallback: check `/person/enrich` response
+for social/portfolio links first.
 
 **Step 2 — Scrape portfolio:**
-
 Call `POST /web/enrich/live` with the portfolio URL.
+If SPA-heavy (Webflow, Framer, Cargo), raw HTML may be sparse.
+Fallback: Jina Reader at `https://r.jina.ai/{portfolio_url}`.
 
-If the page is SPA-heavy (Webflow, Framer, Cargo), the raw HTML may be sparse.
-Use Jina Reader as fallback: `https://r.jina.ai/{portfolio_url}`
-
-Extract structured signals using Claude:
-```python
-# Prompt Claude to extract structured facts from scraped text
-# Return as Pydantic model — separate extracted facts from inferred signals
-```
+Extract structured signals using Claude. Return as a Zod-validated object.
 
 **Extracted facts (direct from portfolio):**
-- `case_studies: list[str]` — project names and industries
-- `tools_mentioned: list[str]` — Figma, Framer, etc.
-- `product_types: list[str]` — B2B SaaS, mobile, consumer, etc.
-- `years_of_work_shown: int`
+- `case_studies: string[]` — project names and industries
+- `tools_mentioned: string[]` — Figma, Framer, etc.
+- `product_types: string[]` — B2B SaaS, mobile, consumer, etc.
+- `years_of_work_shown: number`
 
-**Inferred signals (Claude-scored):**
-- `narrative_clarity: int` — 1–5, how well they explain decisions not just visuals
-- `complexity_handled: int` — 1–5, evidence of 0→1 or ambiguous problem spaces
-- `startup_fit: int` — 1–5, evidence of working in small teams, wearing multiple hats
+**Inferred signals (Claude-scored 1–5):**
+- `narrative_clarity` — explains decisions, not just visuals
+- `complexity_handled` — evidence of 0→1 or ambiguous problem spaces
+- `startup_fit` — small teams, wearing multiple hats
 
 **Step 3 — Score against founding designer rubric:**
 
@@ -199,23 +165,22 @@ Extract structured signals using Claude:
 | B2B or relevant domain | 15% |
 | Tool proficiency (Figma, prototyping) | 10% |
 
-**Output:** `candidates` table updated with `portfolio_score`, `portfolio_url`, `signals_json`
+**Demo safety:** pre-run Stage 3 for the 2 demo companies before the demo. Cache in
+Supabase. Live path stays available but the demo serves cached scores.
+
+**Output:** `candidates` table updated with `portfolio_score`, `portfolio_url`, `signals`
 
 ---
 
 ## Stage 4 — Deliver candidate brief
 
-**Goal:** Generate a ranked candidate brief for each watchlist company and send it to
-the decision maker.
+**Goal:** Generate a ranked candidate brief for each watchlist company.
 
-**Step 1 — Re-rank candidates per company:**
-
-Use Claude to re-rank the top 10 candidates based on company context (industry, product
-type, stage) against each candidate's signals. Output top 5.
+**Step 1 — Re-rank per company:**
+Use Claude to re-rank the top 10 candidates given company context (industry, product
+type, stage). Output top 5.
 
 **Step 2 — Generate brief:**
-
-Prompt Claude to produce a brief in this format per company:
 ```
 Subject: 5 founding designers worth meeting — [Company Name]
 
@@ -231,15 +196,10 @@ Want intros to any of these? Reply and we'll make it happen.
 — Riffle
 ```
 
-**Step 3 — Get decision maker email:**
-
-Call `POST /person/enrich` for each decision maker identified in Stage 1.
-Use the `verified_email` field. Skip if no verified email found.
-
-**Step 4 — Send:**
-
-For the hackathon: print to stdout or write to file. No live email sending needed for demo.
-In production: Brevo transactional email API.
+**Step 3 — Render in UI:**
+For MVP, render the brief in the web page with a copy-to-clipboard button. No live email.
+Decision maker email is looked up via `/person/enrich` (`verified_email` field) and shown
+as "would send to: foo@bar.com".
 
 ---
 
@@ -257,7 +217,7 @@ create table companies (
   qual_score float,              -- 0.0–1.0 watchlist qualification score
   on_watchlist boolean default false,
   enriched_at timestamptz,
-  raw_enrich jsonb               -- full crustdata response cached
+  raw_enrich jsonb
 );
 
 -- decision_makers: C-level contacts at watchlist companies
@@ -278,7 +238,7 @@ create table candidates (
   current_company text,
   portfolio_url text,
   portfolio_score float,         -- 0.0–1.0 rubric score
-  signals jsonb,                 -- extracted facts + inferred signals
+  signals jsonb,
   enriched_at timestamptz,
   raw_enrich jsonb
 );
@@ -288,7 +248,7 @@ create table briefs (
   id uuid primary key default gen_random_uuid(),
   company_id text references companies(id),
   decision_maker_id text references decision_makers(id),
-  candidate_ids text[],          -- ordered top-5
+  candidate_ids text[],
   brief_text text,
   generated_at timestamptz
 );
@@ -299,53 +259,86 @@ create table briefs (
 ## File structure
 
 ```
-riffle-contextcon/
-├── CLAUDE.md                  ← this file
-├── .env                       ← CRUSTDATA_API_KEY, ANTHROPIC_API_KEY, SUPABASE_URL, SUPABASE_KEY
-├── main.py                    ← CLI entry point
+contextcon/
+├── plan/
+│   └── README.md              ← this doc
+├── app/
+│   ├── layout.tsx
+│   ├── page.tsx               ← watchlist view + "Run pipeline" buttons
+│   ├── globals.css
+│   └── api/
+│       └── pipeline/
+│           └── [companyId]/
+│               └── route.ts   ← orchestrates Stages 1–4 for one company
+├── lib/
+│   ├── crustdata.ts           ← thin wrapper around all Crustdata endpoints
+│   ├── llm.ts                 ← Claude API calls (scoring, extraction, brief gen)
+│   ├── scraper.ts             ← web/enrich/live + Jina fallback chain
+│   ├── supabase.ts            ← Supabase client (service-role, server-only)
+│   ├── demo-companies.ts      ← hardcoded MVP watchlist
+│   └── types.ts               ← Zod schemas for company and candidate signals
 ├── pipeline/
-│   ├── trigger.py             ← Phase 0: job posting + signal detection
-│   ├── watchlist.py           ← Phase 1: iterative company loop
-│   ├── decision_makers.py     ← Stage 1
-│   ├── sourcing.py            ← Stage 2
-│   ├── qualification.py       ← Stage 3: portfolio scraping + scoring
-│   └── brief.py               ← Stage 4: brief generation
-├── models/
-│   ├── company.py             ← Pydantic models for company signals
-│   └── candidate.py           ← Pydantic models for portfolio signals
+│   ├── decision-makers.ts     ← Stage 1
+│   ├── sourcing.ts            ← Stage 2
+│   ├── qualification.ts       ← Stage 3
+│   └── brief.ts               ← Stage 4
 ├── db/
-│   ├── client.py              ← Supabase client
 │   └── schema.sql             ← table definitions above
-└── utils/
-    ├── crustdata.py           ← thin wrapper around all Crustdata endpoints
-    ├── llm.py                 ← Claude API calls (scoring, extraction, brief gen)
-    └── scraper.py             ← web/enrich/live + Jina fallback chain
+├── .env.example
+├── package.json
+├── tsconfig.json
+├── next.config.ts
+└── README.md                  ← root README pointing at plan/
 ```
 
 ---
 
 ## Build order
 
-Build in this sequence — each phase is independently testable:
+Each step is independently testable. Ship each one before moving on.
 
-1. `utils/crustdata.py` — get all API calls working with real data first
-2. `db/` — stand up Supabase schema, verify read/write
-3. `pipeline/watchlist.py` — interactive loop with CLI table output (Phase 1)
-4. `pipeline/trigger.py` — job posting detection (Phase 0)
-5. `models/` — Pydantic schemas for company and candidate signals
-6. `utils/scraper.py` — portfolio scraping with Jina fallback
-7. `pipeline/qualification.py` — Stage 3, most complex, test in isolation
-8. `pipeline/sourcing.py` + `pipeline/decision_makers.py` — Stages 1 & 2
-9. `pipeline/brief.py` — Stage 4, wire everything together
-10. `main.py` — end-to-end CLI entry point for demo
+1. **Skeleton** — Next.js scaffold, Tailwind, env plumbing, Supabase client, deploy to Vercel
+2. **`lib/crustdata.ts`** — wrapper with one working call (e.g. `/company/enrich`)
+3. **`db/schema.sql`** applied to Supabase; verify read/write from a server action
+4. **Hardcoded watchlist** — `lib/demo-companies.ts` + seed on boot; UI shows 2 cards
+5. **Stage 1** — decision-makers lookup, render results inline on the card
+6. **Stage 2** — sourcing (run once, shared across companies); store in `candidates`
+7. **`lib/scraper.ts`** — portfolio scraping with Jina fallback
+8. **Stage 3** — portfolio qualification; pre-warm cache for demo companies
+9. **Stage 4** — brief generation; render with copy button
+10. **Polish** — loading states, error toasts, clean typography for the demo
+
+---
+
+## Post-MVP (deferred)
+
+### Phase 0 — Trigger detection
+Detect companies that have entered a "hiring but no designer" state.
+
+- `POST /job/search` filtered to eng/PM/sales roles
+- Check for active design JD on same company — if none, qualify
+- Secondary signals: funding-round delta, headcount growth, web-traffic MoM
+- Weekly cron re-scan of tracked universe
+- Store last-seen state per company to detect deltas
+
+### Phase 1 — Iterative watchlist refinement
+Interactive loop for refining the target list.
+
+- `POST /company/search` with firmographic filters (funding stage, headcount, industry, geo)
+- Enrich + score each result across 5 weighted signals
+- Present ranked table; user can adjust filters, re-run, or include/exclude manually
+- Lock → write to Supabase `watchlist`
+- CLI initially; promote to a web UI if time allows
+
+### Live email send
+Wire `briefs` output into Brevo transactional email. Verify decision-maker consent flow first.
 
 ---
 
 ## Hackathon demo script
 
-1. Run `python main.py watchlist` — show interactive filter loop, lock 5 companies
-2. Run `python main.py pipeline --company <id>` — run full pipeline for one company
-3. Show the printed candidate brief with 5 ranked designers and why-they-fit summaries
-
-The demo story: "We detected that [Company] is hiring engineers but has no designer.
-Here are 5 founding designers we'd introduce them to, qualified from portfolio review."
+1. Open the hosted Vercel URL — shows 2 pre-qualified companies
+2. Click "Run pipeline" on Company A — stages animate through decision makers, candidates, scores, brief
+3. Click "Run pipeline" on Company B — same, faster (cache is warm)
+4. Read the generated brief out loud; highlight the "why they fit" lines grounded in portfolio evidence
+5. Mention Phase 0/1 as the roadmap: "today we hardcoded 2; next we detect these automatically"
