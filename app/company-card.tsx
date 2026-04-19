@@ -425,7 +425,7 @@ function StageCard({
       <div className="flex-1 text-xs text-neutral-300">
         {status === "pending" && (
           <p className="text-neutral-600">
-            {id === "qualification" || id === "brief"
+            {id === "brief"
               ? "Not yet implemented"
               : "Waiting…"}
           </p>
@@ -551,11 +551,11 @@ function Results({
 
       <section>
         <h4 className="text-xs uppercase tracking-wider text-neutral-500">
-          Candidates ({candidates.length})
+          Qualified candidates ({candidates.length})
         </h4>
         {candidates.length === 0 ? (
           <p className="mt-2 text-sm text-neutral-400">
-            No candidates sourced.
+            No qualified candidates.
           </p>
         ) : (
           <ul className="mt-2 space-y-2">
@@ -592,18 +592,21 @@ function Results({
                       LinkedIn ↗
                     </a>
                   )}
-                  {c.websites?.slice(0, 2).map((url) => (
-                    <a
-                      key={url}
-                      href={url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="max-w-[120px] truncate text-xs text-neutral-500 hover:text-neutral-300"
-                      title={url}
-                    >
-                      {new URL(url).hostname.replace(/^www\./, "")} ↗
-                    </a>
-                  ))}
+                  {c.websites
+                    ?.filter((url) => { try { new URL(url); return true; } catch { return false; } })
+                    .slice(0, 2)
+                    .map((url) => (
+                      <a
+                        key={url}
+                        href={url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="max-w-[120px] truncate text-xs text-neutral-500 hover:text-neutral-300"
+                        title={url}
+                      >
+                        {new URL(url).hostname.replace(/^www\./, "")} ↗
+                      </a>
+                    ))}
                 </div>
               </li>
             ))}
