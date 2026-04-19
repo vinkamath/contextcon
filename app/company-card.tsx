@@ -53,6 +53,7 @@ export default function CompanyCard({ company }: { company: WatchlistCompany }) 
   const [expanded, setExpanded] = useState(false);
   const [isRemoving, startRemove] = useTransition();
   const abortRef = useRef<AbortController | null>(null);
+  const sawTerminalPipelineEvent = useRef(false);
 
   function handleRemove() {
     if (!confirm(`Remove ${company.name} from watchlist?`)) return;
@@ -131,10 +132,12 @@ export default function CompanyCard({ company }: { company: WatchlistCompany }) 
         setBriefs(event.briefs);
         return;
       case "pipeline_done":
+        sawTerminalPipelineEvent.current = true;
         setActiveStage(null);
         setPhase("done");
         return;
       case "pipeline_error":
+        sawTerminalPipelineEvent.current = true;
         setActiveStage(null);
         setFatalError(event.error);
         setPhase("error");
@@ -155,12 +158,31 @@ export default function CompanyCard({ company }: { company: WatchlistCompany }) 
     setBriefs([]);
     setFatalError(null);
     setExpanded(true);
+    sawTerminalPipelineEvent.current = false;
 
     try {
-      const res = await fetch(`/api/pipeline/${company.id}`, {
+      const res = await fetch(`/api/pipeline/${encodeURIComponent(company.id)}`, {
         method: "POST",
         signal: ac.signal,
       });
+
+      if (!res.ok) {
+        const text = await res.text();
+        const snippet = text.replace(/\s+/g, " ").trim().slice(0, 280);
+        throw new Error(
+          snippet
+            ? `Pipeline request failed (${res.status}): ${snippet}`
+            : `Pipeline request failed (${res.status})`
+        );
+      }
+
+      const ct = res.headers.get("content-type") ?? "";
+      if (ct.includes("text/html")) {
+        throw new Error(
+          "Pipeline returned an HTML error page instead of stream data. Restart the dev server or run `rm -rf .next`."
+        );
+      }
+
       if (!res.body) throw new Error("No response body");
 
       const reader = res.body.getReader();
@@ -188,6 +210,13 @@ export default function CompanyCard({ company }: { company: WatchlistCompany }) 
         } catch {
           /* ignore */
         }
+      }
+
+      if (!ac.signal.aborted && !sawTerminalPipelineEvent.current) {
+        setFatalError(
+          "Pipeline stream ended without a result. If the dev server showed an error, restart it or run `rm -rf .next` and try again."
+        );
+        setPhase("error");
       }
     } catch (err) {
       if (ac.signal.aborted) return;
@@ -246,6 +275,7 @@ export default function CompanyCard({ company }: { company: WatchlistCompany }) 
         </button>
         <div className="flex shrink-0 items-center gap-2">
           <button
+            type="button"
             onClick={handleRemove}
             disabled={isRemoving || phase === "running"}
             className="rounded-md border border-neutral-800 px-2.5 py-1.5 text-xs text-neutral-400 hover:border-neutral-700 hover:text-neutral-200 disabled:opacity-50"
@@ -253,6 +283,7 @@ export default function CompanyCard({ company }: { company: WatchlistCompany }) 
             {isRemoving ? "Removing…" : "Remove"}
           </button>
           <button
+            type="button"
             onClick={runPipeline}
             disabled={phase === "running"}
             className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-black disabled:opacity-50"
@@ -518,9 +549,9 @@ function Results({
           <p className="mt-2 text-sm text-neutral-400">No C-level matches found.</p>
         ) : (
           <ul className="mt-2 space-y-2">
-            {decisionMakers.map((dm) => (
+            {decisionMakers.map((dm, i) => (
               <li
-                key={dm.id}
+                key={`${dm.id}-${i}`}
                 className="flex items-baseline justify-between gap-3 text-sm"
               >
                 <div className="min-w-0 flex-1">
@@ -560,9 +591,9 @@ function Results({
           </p>
         ) : (
           <ul className="mt-2 space-y-2">
-            {candidates.slice(0, 10).map((c) => (
+            {candidates.slice(0, 10).map((c, i) => (
               <li
-                key={c.id}
+                key={`${c.id}-${i}`}
                 className="flex items-baseline justify-between gap-3 text-sm"
               >
                 <div className="min-w-0 flex-1">
@@ -631,8 +662,11 @@ function Results({
             </span>
           </div>
           <ul className="mt-3 space-y-4">
-            {briefs.map((b) => (
-              <li key={b.id} className="rounded-md border border-neutral-800 bg-neutral-900/60 p-4">
+            {briefs.map((b, i) => (
+              <li
+                key={`${b.id}-${i}`}
+                className="rounded-md border border-neutral-800 bg-neutral-900/60 p-4"
+              >
                 <div className="mb-2 space-y-0.5 text-xs text-neutral-500">
                   <div>
                     <span className="text-neutral-600">To: </span>
