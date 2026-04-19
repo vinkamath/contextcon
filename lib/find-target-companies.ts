@@ -1,4 +1,8 @@
-import { crustdata, type CompanySearchResult } from "@/lib/crustdata";
+import {
+  crustdata,
+  type CompanySearchFilter,
+  type CompanySearchResult,
+} from "@/lib/crustdata";
 
 const FIELDS = [
   "crustdata_company_id",
@@ -34,9 +38,13 @@ export type DiscoverEmitter = (event: DiscoverEvent) => void;
 
 const noop: DiscoverEmitter = () => {};
 
-export async function findSFSeedCompaniesWithoutDesigner(
-  limit = 50,
-  emit: DiscoverEmitter = noop
+/** LinkedIn primary industry label in Crustdata — covers most fintech / banking startups. */
+const FINTECH_INDUSTRY = "Financial Services";
+
+async function paginateCompaniesWithoutDesigner(
+  limit: number,
+  emit: DiscoverEmitter,
+  filters: CompanySearchFilter
 ): Promise<CompanySearchResult[]> {
   const results: CompanySearchResult[] = [];
   let cursor: string | undefined;
@@ -47,21 +55,7 @@ export async function findSFSeedCompaniesWithoutDesigner(
   while (results.length < limit) {
     page += 1;
     const res = await crustdata.companySearch({
-      filters: {
-        op: "and",
-        conditions: [
-          {
-            field: "locations.headquarters",
-            type: "(.)",
-            value: "San Francisco",
-          },
-          {
-            field: "funding.last_round_type",
-            type: "=",
-            value: "seed",
-          },
-        ],
-      },
+      filters,
       fields: FIELDS,
       sorts: [{ column: "funding.last_fundraise_date", order: "desc" }],
       limit: 100,
@@ -95,4 +89,57 @@ export async function findSFSeedCompaniesWithoutDesigner(
 
   emit({ type: "done", total: results.length });
   return results;
+}
+
+export async function findSFSeedCompaniesWithoutDesigner(
+  limit = 50,
+  emit: DiscoverEmitter = noop
+): Promise<CompanySearchResult[]> {
+  return paginateCompaniesWithoutDesigner(limit, emit, {
+    op: "and",
+    conditions: [
+      {
+        field: "locations.headquarters",
+        type: "(.)",
+        value: "San Francisco",
+      },
+      {
+        field: "funding.last_round_type",
+        type: "=",
+        value: "seed",
+      },
+    ],
+  });
+}
+
+/** NYC HQ, Financial Services (fintech), seed, under 20 employees; excludes companies with design headcount. */
+export async function findNYCSeedFintechSmallWithoutDesigner(
+  limit = 50,
+  emit: DiscoverEmitter = noop
+): Promise<CompanySearchResult[]> {
+  return paginateCompaniesWithoutDesigner(limit, emit, {
+    op: "and",
+    conditions: [
+      {
+        field: "locations.headquarters",
+        type: "(.)",
+        value: "New York",
+      },
+      {
+        field: "taxonomy.professional_network_industry",
+        type: "[.]",
+        value: FINTECH_INDUSTRY,
+      },
+      {
+        field: "funding.last_round_type",
+        type: "=",
+        value: "seed",
+      },
+      {
+        field: "headcount.total",
+        type: "<",
+        value: 20,
+      },
+    ],
+  });
 }

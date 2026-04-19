@@ -1,7 +1,15 @@
 import {
+  findNYCSeedFintechSmallWithoutDesigner,
   findSFSeedCompaniesWithoutDesigner,
   type DiscoverEvent,
 } from "@/lib/find-target-companies";
+
+const PRESETS = {
+  "sf-seed": findSFSeedCompaniesWithoutDesigner,
+  "nyc-fintech-seed": findNYCSeedFintechSmallWithoutDesigner,
+} as const;
+
+type PresetKey = keyof typeof PRESETS;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +21,18 @@ export async function POST(req: Request) {
     100
   );
 
+  const presetRaw = url.searchParams.get("preset") ?? "sf-seed";
+  if (!(presetRaw in PRESETS)) {
+    return new Response(
+      JSON.stringify({
+        error: `Unknown preset "${presetRaw}". Use: ${Object.keys(PRESETS).join(", ")}`,
+      }),
+      { status: 400, headers: { "Content-Type": "application/json" } }
+    );
+  }
+  const preset = presetRaw as PresetKey;
+  const runSearch = PRESETS[preset];
+
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
@@ -22,7 +42,7 @@ export async function POST(req: Request) {
       };
 
       try {
-        await findSFSeedCompaniesWithoutDesigner(limit, send);
+        await runSearch(limit, send);
       } catch (err) {
         send({
           type: "error",

@@ -14,7 +14,8 @@ export default async function DiscoverPage() {
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Discover</h1>
           <p className="mt-2 text-sm text-neutral-400">
-            Find pre-A SF startups without a designer, or add a company by domain.
+            Run saved Crustdata searches (SF seed or NYC fintech seed), or add a
+            company by domain.
           </p>
         </div>
         <Link

@@ -7,18 +7,64 @@ import type { DiscoverEvent } from "@/lib/find-target-companies";
 
 type SearchPhase = "idle" | "running" | "done" | "error";
 
+type DiscoverPreset = "sf-seed" | "nyc-fintech-seed";
+
 export default function DiscoverClient({
   initialWatchlistIds,
 }: {
   initialWatchlistIds: string[];
 }) {
   const router = useRouter();
-  const [phase, setPhase] = useState<SearchPhase>("idle");
-  const [status, setStatus] = useState<string>("");
-  const [matches, setMatches] = useState<CompanySearchResult[]>([]);
   const [addedIds, setAddedIds] = useState<Set<string>>(
     () => new Set(initialWatchlistIds)
   );
+
+  return (
+    <div className="space-y-12">
+      <ManualAdd
+        onAdded={(id) => setAddedIds((s) => new Set(s).add(id))}
+        onNavigate={() => router.refresh()}
+      />
+
+      <DiscoverPresetSection
+        title="SF seed-stage, no designer"
+        description="Headquarters in San Francisco, last round seed. Paginates Crustdata and skips companies with design headcount."
+        preset="sf-seed"
+        addedIds={addedIds}
+        onAddToWatchlist={(id) =>
+          setAddedIds((s) => new Set(s).add(id))
+        }
+      />
+
+      <DiscoverPresetSection
+        title="NYC fintech, seed, under 20 people, no designer"
+        description="Financial Services industry, HQ in New York, seed stage, fewer than 20 employees, no product designer on staff."
+        preset="nyc-fintech-seed"
+        addedIds={addedIds}
+        onAddToWatchlist={(id) =>
+          setAddedIds((s) => new Set(s).add(id))
+        }
+      />
+    </div>
+  );
+}
+
+function DiscoverPresetSection({
+  title,
+  description,
+  preset,
+  addedIds,
+  onAddToWatchlist,
+}: {
+  title: string;
+  description: string;
+  preset: DiscoverPreset;
+  addedIds: Set<string>;
+  onAddToWatchlist: (crustdataId: string) => void;
+}) {
+  const [phase, setPhase] = useState<SearchPhase>("idle");
+  const [status, setStatus] = useState<string>("");
+  const [matches, setMatches] = useState<CompanySearchResult[]>([]);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -59,10 +105,24 @@ export default function DiscoverClient({
     setError(null);
 
     try {
-      const res = await fetch("/api/discover?limit=20", {
-        method: "POST",
-        signal: ac.signal,
-      });
+      const res = await fetch(
+        `/api/discover?limit=20&preset=${encodeURIComponent(preset)}`,
+        {
+          method: "POST",
+          signal: ac.signal,
+        }
+      );
+      if (!res.ok) {
+        const text = await res.text();
+        let msg = text;
+        try {
+          const j = JSON.parse(text) as { error?: string };
+          if (j.error) msg = j.error;
+        } catch {
+          /* use raw */
+        }
+        throw new Error(msg || `HTTP ${res.status}`);
+      }
       if (!res.body) throw new Error("No response body");
 
       const reader = res.body.getReader();
@@ -99,69 +159,56 @@ export default function DiscoverClient({
   }
 
   return (
-    <div className="space-y-12">
-      <ManualAdd
-        onAdded={(id) => setAddedIds((s) => new Set(s).add(id))}
-        onNavigate={() => router.refresh()}
-      />
-
-      <section className="space-y-4">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h2 className="text-sm uppercase tracking-wider text-neutral-500">
-              SF seed-stage, no designer
-            </h2>
-            <p className="mt-1 text-xs text-neutral-500">
-              Paginates Crustdata, filters out companies that already have a
-              designer on staff.
-            </p>
-          </div>
-          <button
-            onClick={runSearch}
-            disabled={phase === "running"}
-            className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-black disabled:opacity-50"
-          >
-            {phase === "running"
-              ? "Searching…"
-              : phase === "done"
+    <section className="space-y-4">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-sm uppercase tracking-wider text-neutral-500">
+            {title}
+          </h2>
+          <p className="mt-1 text-xs text-neutral-500">{description}</p>
+        </div>
+        <button
+          type="button"
+          onClick={runSearch}
+          disabled={phase === "running"}
+          className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-black disabled:opacity-50"
+        >
+          {phase === "running"
+            ? "Searching…"
+            : phase === "done"
               ? "Run again"
               : "Run search"}
-          </button>
-        </div>
+        </button>
+      </div>
 
-        {(phase === "running" || phase === "done") && status && (
-          <p className="flex items-center gap-2 text-xs text-neutral-400">
-            {phase === "running" && (
-              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-blue-400" />
-            )}
-            {status}
-          </p>
-        )}
+      {(phase === "running" || phase === "done") && status && (
+        <p className="flex items-center gap-2 text-xs text-neutral-400">
+          {phase === "running" && (
+            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-blue-400" />
+          )}
+          {status}
+        </p>
+      )}
 
-        {error && (
-          <pre className="whitespace-pre-wrap rounded-md bg-red-950/40 p-3 text-xs text-red-300">
-            {error}
-          </pre>
-        )}
+      {error && (
+        <pre className="whitespace-pre-wrap rounded-md bg-red-950/40 p-3 text-xs text-red-300">
+          {error}
+        </pre>
+      )}
 
-        {matches.length > 0 && (
-          <ul className="divide-y divide-neutral-900 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950">
-            {matches.map((c) => (
-              <MatchRow
-                key={c.crustdata_company_id}
-                company={c}
-                added={addedIds.has(String(c.crustdata_company_id))}
-                onAdd={() =>
-                  setAddedIds((s) =>
-                    new Set(s).add(String(c.crustdata_company_id))
-                  )
-                }
-              />
-            ))}
-          </ul>
-        )}
-      </section>
-    </div>
+      {matches.length > 0 && (
+        <ul className="divide-y divide-neutral-900 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950">
+          {matches.map((c) => (
+            <MatchRow
+              key={c.crustdata_company_id}
+              company={c}
+              added={addedIds.has(String(c.crustdata_company_id))}
+              onAdd={() => onAddToWatchlist(String(c.crustdata_company_id))}
+            />
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
