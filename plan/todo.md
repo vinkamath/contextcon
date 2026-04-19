@@ -1,0 +1,3 @@
+- [ ] USe competitors to gather founding designer profiles.
+- [ ] Add a Crustdata watch on companies.
+- [ ] Flow to generate watch lists

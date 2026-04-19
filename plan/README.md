@@ -282,8 +282,8 @@ contextcon/
 │   ├── sourcing.ts            ← Stage 2
 │   ├── qualification.ts       ← Stage 3
 │   └── brief.ts               ← Stage 4
-├── db/
-│   └── schema.sql             ← table definitions above
+├── supabase/
+│   └── migrations/            ← `supabase db push` applies these
 ├── .env.example
 ├── package.json
 ├── tsconfig.json
@@ -299,7 +299,7 @@ Each step is independently testable. Ship each one before moving on.
 
 1. **Skeleton** — Next.js scaffold, Tailwind, env plumbing, Supabase client, deploy to Vercel
 2. **`lib/crustdata.ts`** — wrapper with one working call (e.g. `/company/enrich`)
-3. **`db/schema.sql`** applied to Supabase; verify read/write from a server action
+3. **`supabase/migrations/`** applied via `supabase db push`; verify read/write from a server action
 4. **Hardcoded watchlist** — `lib/demo-companies.ts` + seed on boot; UI shows 2 cards
 5. **Stage 1** — decision-makers lookup, render results inline on the card
 6. **Stage 2** — sourcing (run once, shared across companies); store in `candidates`
