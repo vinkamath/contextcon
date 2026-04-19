@@ -432,25 +432,22 @@ function StageCard({
         )}
         {status === "running" && (
           <div className="space-y-1">
-            {lastLog ? (
-              <p className="text-neutral-300">
-                <span className="mr-1 inline-block animate-pulse text-blue-400">●</span>
-                {lastLog}
-              </p>
-            ) : (
+            {logs.length === 0 ? (
               <p className="text-neutral-500">Starting…</p>
-            )}
-            {logs.length > 1 && (
-              <details className="mt-2">
-                <summary className="cursor-pointer text-[10px] uppercase tracking-wider text-neutral-500 hover:text-neutral-300">
-                  {logs.length} events
-                </summary>
-                <ul className="mt-1 max-h-32 space-y-0.5 overflow-y-auto text-[11px] text-neutral-500">
-                  {logs.slice().reverse().map((l, i) => (
-                    <li key={i}>{l}</li>
-                  ))}
-                </ul>
-              </details>
+            ) : (
+              <ul className="space-y-0.5">
+                {logs.slice(-5).reverse().map((l, i) => (
+                  <li
+                    key={logs.length - i}
+                    className={`text-[11px] ${i === 0 ? "text-neutral-200" : "text-neutral-500"}`}
+                  >
+                    {i === 0 && (
+                      <span className="mr-1 inline-block animate-pulse text-blue-400">●</span>
+                    )}
+                    {l}
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         )}
