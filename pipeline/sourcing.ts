@@ -9,6 +9,20 @@ import { cacheCutoffIso } from "@/lib/config";
 import type { DemoCompany } from "@/lib/demo-companies";
 import type { Candidate } from "@/lib/types";
 import type { CompanyData, PersonProfile } from "@/lib/company-data";
+import type { PipelineEmitter } from "@/lib/pipeline-events";
+
+const noop: PipelineEmitter = () => {};
+
+function ageLabel(iso: string | null | undefined): string {
+  if (!iso) return "just now";
+  const days = Math.max(
+    0,
+    Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000)
+  );
+  if (days === 0) return "today";
+  if (days === 1) return "1 day ago";
+  return `${days} days ago`;
+}
 
 async function getCompanySignals(
   companyId: string
@@ -27,7 +41,9 @@ async function getCompanySignals(
   };
 }
 
-async function getCachedCandidates(companyId: string): Promise<Candidate[] | null> {
+async function getCachedCandidates(
+  companyId: string
+): Promise<{ candidates: Candidate[]; sourcedAt: string | null } | null> {
   const db = supabase();
   const cutoff = cacheCutoffIso("person");
 
@@ -36,26 +52,30 @@ async function getCachedCandidates(companyId: string): Promise<Candidate[] | nul
     .select("sourced_at")
     .eq("company_id", companyId)
     .gte("sourced_at", cutoff)
+    .order("sourced_at", { ascending: false })
     .limit(1);
 
   if (!sourcing || sourcing.length === 0) return null;
+
+  const ids =
+    (
+      await db
+        .from("candidate_sourcing")
+        .select("candidate_id")
+        .eq("company_id", companyId)
+    ).data?.map((r: { candidate_id: string }) => r.candidate_id) ?? [];
 
   const { data: rows } = await db
     .from("candidates")
     .select(
       "id, name, current_title, current_company, location, headline, linkedin_url, portfolio_url, portfolio_score, signals, enriched_at"
     )
-    .in(
-      "id",
-      (
-        await db
-          .from("candidate_sourcing")
-          .select("candidate_id")
-          .eq("company_id", companyId)
-      ).data?.map((r: { candidate_id: string }) => r.candidate_id) ?? []
-    );
+    .in("id", ids);
 
-  return (rows ?? []) as Candidate[];
+  return {
+    candidates: (rows ?? []) as Candidate[],
+    sourcedAt: sourcing[0].sourced_at ?? null,
+  };
 }
 
 function buildSearchRequest(
@@ -96,12 +116,15 @@ function buildSearchRequest(
 }
 
 async function enrichBatch(
-  profiles: PersonProfile[]
+  profiles: PersonProfile[],
+  emit: PipelineEmitter
 ): Promise<Map<number, PersonEnrichData>> {
   const result = new Map<number, PersonEnrichData>();
   const BATCH = 10;
+  const totalBatches = Math.ceil(profiles.length / BATCH);
 
   for (let i = 0; i < profiles.length; i += BATCH) {
+    const batchNum = i / BATCH + 1;
     const batch = profiles.slice(i, i + BATCH);
     const urls = batch
       .map(
@@ -111,6 +134,12 @@ async function enrichBatch(
       .filter((u): u is string => u !== null);
 
     if (urls.length === 0) continue;
+
+    emit({
+      type: "log",
+      stage: "sourcing",
+      message: `Enriching batch ${batchNum}/${totalBatches} (${urls.length} profiles)`,
+    });
 
     try {
       const res = await crustdata.personEnrich({
@@ -126,27 +155,80 @@ async function enrichBatch(
       }
     } catch (err) {
       console.error(`personEnrich batch ${i}–${i + BATCH} failed:`, err);
+      emit({
+        type: "log",
+        stage: "sourcing",
+        message: `Batch ${batchNum}/${totalBatches} failed — skipping`,
+      });
     }
   }
 
   return result;
 }
 
-export async function sourceCandidates(company: DemoCompany): Promise<Candidate[]> {
+export async function sourceCandidates(
+  company: DemoCompany,
+  emit: PipelineEmitter = noop
+): Promise<Candidate[]> {
   const cached = await getCachedCandidates(company.id);
-  if (cached && cached.length > 0) return cached;
+  if (cached && cached.candidates.length > 0) {
+    emit({
+      type: "cache",
+      stage: "sourcing",
+      hit: true,
+      detail: `Sourcing cached (${ageLabel(cached.sourcedAt)}) — ${cached.candidates.length} candidates`,
+    });
+    emit({
+      type: "stage_done",
+      stage: "sourcing",
+      summary: `${cached.candidates.length} candidates (from cache)`,
+    });
+    return cached.candidates;
+  }
+
+  emit({
+    type: "cache",
+    stage: "sourcing",
+    hit: false,
+    detail: "No cached sourcing — running live search",
+  });
 
   const { headquarters, industry } = await getCompanySignals(company.id);
   if (!headquarters) throw new Error(`No headquarters in enrich data for company ${company.id}`);
   if (!industry) throw new Error(`No industry in enrich data for company ${company.id}`);
-  const searchBody = buildSearchRequest(headquarters, industry);
 
+  emit({
+    type: "log",
+    stage: "sourcing",
+    message: `Searching senior designers in ${headquarters} · industry "${industry}"`,
+  });
+
+  const searchBody = buildSearchRequest(headquarters, industry);
   const searchRaw = await crustdata.personSearch(searchBody);
   const profiles = searchRaw.profiles ?? [];
 
-  if (profiles.length === 0) return [];
+  emit({
+    type: "log",
+    stage: "sourcing",
+    message: `Crustdata returned ${profiles.length} matching profiles`,
+  });
 
-  const enrichMap = await enrichBatch(profiles);
+  if (profiles.length === 0) {
+    emit({
+      type: "stage_done",
+      stage: "sourcing",
+      summary: "0 candidates — search returned no profiles",
+    });
+    return [];
+  }
+
+  const enrichMap = await enrichBatch(profiles, emit);
+
+  emit({
+    type: "log",
+    stage: "sourcing",
+    message: `Writing ${profiles.length} candidates to Supabase`,
+  });
 
   const db = supabase();
   const results: Candidate[] = [];
@@ -206,6 +288,12 @@ export async function sourceCandidates(company: DemoCompany): Promise<Candidate[
       enriched_at: new Date().toISOString(),
     });
   }
+
+  emit({
+    type: "stage_done",
+    stage: "sourcing",
+    summary: `${results.length} candidates sourced`,
+  });
 
   return results;
 }

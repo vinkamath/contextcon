@@ -7,8 +7,25 @@ import { cacheCutoffIso } from "@/lib/config";
 import type { DemoCompany } from "@/lib/demo-companies";
 import type { DecisionMaker } from "@/lib/types";
 import type { CompanyData } from "@/lib/company-data";
+import type { PipelineEmitter } from "@/lib/pipeline-events";
 
-async function getCompanyData(company: DemoCompany): Promise<CompanyData> {
+const noop: PipelineEmitter = () => {};
+
+function ageLabel(iso: string | null | undefined): string {
+  if (!iso) return "just now";
+  const days = Math.max(
+    0,
+    Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000)
+  );
+  if (days === 0) return "today";
+  if (days === 1) return "1 day ago";
+  return `${days} days ago`;
+}
+
+async function getCompanyData(
+  company: DemoCompany,
+  emit: PipelineEmitter
+): Promise<CompanyData> {
   const db = supabase();
   const cutoff = cacheCutoffIso("company");
 
@@ -19,8 +36,23 @@ async function getCompanyData(company: DemoCompany): Promise<CompanyData> {
     .gte("enriched_at", cutoff)
     .maybeSingle();
   if (readErr) throw new Error(`company cache read: ${readErr.message}`);
-  if (cached?.raw_enrich) return cached.raw_enrich as CompanyData;
 
+  if (cached?.raw_enrich) {
+    emit({
+      type: "cache",
+      stage: "decision_makers",
+      hit: true,
+      detail: `Company profile cached (${ageLabel(cached.enriched_at)})`,
+    });
+    return cached.raw_enrich as CompanyData;
+  }
+
+  emit({
+    type: "cache",
+    stage: "decision_makers",
+    hit: false,
+    detail: "Company profile not cached — calling Crustdata /company/enrich",
+  });
   const res = await crustdata.companyEnrich({
     crustdata_company_ids: [Number(company.id)],
     fields: ["basic_info", "people", "headcount", "funding", "locations", "taxonomy"],
@@ -44,6 +76,11 @@ async function getCompanyData(company: DemoCompany): Promise<CompanyData> {
     { onConflict: "id" }
   );
   if (writeErr) throw new Error(`company cache write: ${writeErr.message}`);
+  emit({
+    type: "log",
+    stage: "decision_makers",
+    message: "Wrote company profile to Supabase",
+  });
 
   return companyData;
 }
@@ -58,9 +95,11 @@ function extractBusinessEmail(data: PersonEnrichData | null): string | null {
 
 async function getPersonEnrich(
   personId: string,
-  linkedinUrl: string | null
-): Promise<PersonEnrichData | null> {
-  if (!linkedinUrl) return null;
+  linkedinUrl: string | null,
+  emit: PipelineEmitter,
+  label: string
+): Promise<{ data: PersonEnrichData | null; fromCache: boolean }> {
+  if (!linkedinUrl) return { data: null, fromCache: false };
 
   const db = supabase();
   const cutoff = cacheCutoffIso("person");
@@ -71,24 +110,49 @@ async function getPersonEnrich(
     .eq("id", personId)
     .gte("enriched_at", cutoff)
     .maybeSingle();
-  if (cached?.raw_enrich) return cached.raw_enrich as PersonEnrichData;
+  if (cached?.raw_enrich) {
+    emit({
+      type: "log",
+      stage: "decision_makers",
+      message: `${label} — cached (${ageLabel(cached.enriched_at)})`,
+    });
+    return { data: cached.raw_enrich as PersonEnrichData, fromCache: true };
+  }
 
+  emit({
+    type: "log",
+    stage: "decision_makers",
+    message: `${label} — enriching via Crustdata`,
+  });
   const res = await crustdata.personEnrich({
     professional_network_profile_urls: [linkedinUrl],
     fields: ["basic_profile", "contact", "social_handles"],
   });
-  return res?.[0]?.matches?.[0]?.person_data ?? null;
+  return {
+    data: res?.[0]?.matches?.[0]?.person_data ?? null,
+    fromCache: false,
+  };
 }
 
 export async function findDecisionMakers(
-  company: DemoCompany
+  company: DemoCompany,
+  emit: PipelineEmitter = noop
 ): Promise<DecisionMaker[]> {
-  const companyData = await getCompanyData(company);
+  const companyData = await getCompanyData(company, emit);
   const rawDMs = companyData.people?.decision_makers ?? [];
+  emit({
+    type: "log",
+    stage: "decision_makers",
+    message: `Found ${rawDMs.length} C-level contacts to enrich`,
+  });
+
   const db = supabase();
   const results: DecisionMaker[] = [];
+  let cacheHits = 0;
+  let liveCalls = 0;
 
-  for (const p of rawDMs) {
+  for (let i = 0; i < rawDMs.length; i++) {
+    const p = rawDMs[i];
     const name = p.basic_profile?.name;
     if (!name) continue;
 
@@ -96,12 +160,21 @@ export async function findDecisionMakers(
     const title = p.basic_profile?.current_title ?? null;
     const linkedinUrl =
       p.social_handles?.professional_network_identifier?.profile_url ?? null;
+    const label = `${name} (${i + 1}/${rawDMs.length})`;
 
     let personData: PersonEnrichData | null = null;
     try {
-      personData = await getPersonEnrich(id, linkedinUrl);
+      const r = await getPersonEnrich(id, linkedinUrl, emit, label);
+      personData = r.data;
+      if (r.fromCache) cacheHits++;
+      else if (personData) liveCalls++;
     } catch (err) {
       console.error(`person enrich failed for ${name}:`, err);
+      emit({
+        type: "log",
+        stage: "decision_makers",
+        message: `${label} — enrich failed`,
+      });
     }
 
     const email = extractBusinessEmail(personData);
@@ -131,6 +204,12 @@ export async function findDecisionMakers(
       email,
     });
   }
+
+  emit({
+    type: "stage_done",
+    stage: "decision_makers",
+    summary: `${results.length} decision makers · ${cacheHits} cached · ${liveCalls} enriched`,
+  });
 
   return results;
 }
