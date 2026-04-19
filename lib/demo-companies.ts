@@ -9,7 +9,7 @@ export type DemoCompany = {
 // Hardcoded MVP watchlist. Swap with real Crustdata company_ids before demo.
 export const DEMO_COMPANIES: DemoCompany[] = [
   {
-    id: "crustdata",
+    id: "6036032",
     name: "Crustdata",
     domain: "crustdata.com",
     funding_stage: "seed",
