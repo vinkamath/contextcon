@@ -9,3 +9,18 @@ export const DecisionMakerSchema = z.object({
   email: z.string().nullable(),
 });
 export type DecisionMaker = z.infer<typeof DecisionMakerSchema>;
+
+export const CandidateSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  current_title: z.string().nullable(),
+  current_company: z.string().nullable(),
+  location: z.string().nullable(),
+  headline: z.string().nullable(),
+  linkedin_url: z.string().nullable(),
+  portfolio_url: z.string().nullable(),
+  portfolio_score: z.number().nullable(),
+  signals: z.unknown().nullable(),
+  enriched_at: z.string().nullable(),
+});
+export type Candidate = z.infer<typeof CandidateSchema>;

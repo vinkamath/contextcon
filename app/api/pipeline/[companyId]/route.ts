@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { DEMO_COMPANIES } from "@/lib/demo-companies";
 import { findDecisionMakers } from "@/pipeline/decision-makers";
+import { sourceCandidates } from "@/pipeline/sourcing";
 
 export async function POST(
   _req: Request,
@@ -14,13 +15,14 @@ export async function POST(
 
   try {
     const decisionMakers = await findDecisionMakers(company);
-    // TODO: Stage 2 — candidate sourcing
+    const candidates = await sourceCandidates(company);
     // TODO: Stage 3 — portfolio qualification
     // TODO: Stage 4 — brief generation
     return NextResponse.json({
       status: "ok",
       company: { id: company.id, name: company.name },
       decision_makers: decisionMakers,
+      candidates,
     });
   } catch (err) {
     return NextResponse.json(
