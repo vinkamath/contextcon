@@ -12,10 +12,16 @@ export default async function Home() {
       <header className="mb-12 flex items-end justify-between gap-6">
         <div>
           <h1 className="text-4xl font-semibold tracking-tight">Riffle</h1>
-          <p className="mt-3 text-neutral-400">
-            Pre-A startups hiring engineers without designers. We find the founding
-            designers worth meeting.
-          </p>
+          <div className="mt-3 space-y-1 text-neutral-400">
+            <p>
+              We find companies that are about to look for product designers—using
+              hiring and growth signals, not job-board noise.
+            </p>
+            <p>
+              That shortlist feeds cold email so we reach the right teams before the
+              search gets crowded.
+            </p>
+          </div>
         </div>
         <Link
           href="/discover"
