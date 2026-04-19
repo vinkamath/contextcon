@@ -87,10 +87,21 @@ function resultToCheck(r: WebFetchResult): WebsiteCheck {
   };
 }
 
-async function fetchUrls(urls: string[]): Promise<Map<string, WebsiteCheck>> {
+async function fetchUrls(
+  urls: string[],
+  emit: PipelineEmitter,
+  totalBatches: number,
+  batchOffset: number
+): Promise<Map<string, WebsiteCheck>> {
   const out = new Map<string, WebsiteCheck>();
   for (let i = 0; i < urls.length; i += MAX_URLS_PER_CALL) {
+    const batchNum = batchOffset + i / MAX_URLS_PER_CALL + 1;
     const batch = urls.slice(i, i + MAX_URLS_PER_CALL);
+    emit({
+      type: "log",
+      stage: "qualification",
+      message: `Batch ${batchNum}/${totalBatches} — scraping ${batch.length} URL${batch.length === 1 ? "" : "s"}…`,
+    });
     try {
       const res = await crustdata.webFetch({ urls: batch });
       for (const r of res) out.set(r.url, resultToCheck(r));
@@ -176,13 +187,13 @@ export async function qualifyCandidates(
   let fetched = new Map<string, WebsiteCheck>();
   if (urlsToFetch.size > 0) {
     const urls = Array.from(urlsToFetch);
-    const batches = Math.ceil(urls.length / MAX_URLS_PER_CALL);
+    const totalBatches = Math.ceil(urls.length / MAX_URLS_PER_CALL);
     emit({
       type: "log",
       stage: "qualification",
-      message: `Scraping ${urls.length} URLs in ${batches} batch${batches === 1 ? "" : "es"} of up to ${MAX_URLS_PER_CALL}`,
+      message: `Scraping ${urls.length} URL${urls.length === 1 ? "" : "s"} across ${totalBatches} batch${totalBatches === 1 ? "" : "es"}`,
     });
-    fetched = await fetchUrls(urls);
+    fetched = await fetchUrls(urls, emit, totalBatches, 0);
   }
 
   const now = new Date().toISOString();
@@ -214,6 +225,13 @@ export async function qualifyCandidates(
       },
     };
 
+    const liveSites = checks.filter((k) => k.ok).length;
+    emit({
+      type: "log",
+      stage: "qualification",
+      message: `${liveSites > 0 ? "✓" : "✗"} ${c.name} — ${liveSites}/${checks.length} site${checks.length === 1 ? "" : "s"} live`,
+    });
+
     if (!cachedChecks) {
       const { error } = await db
         .from("candidates")
@@ -221,12 +239,6 @@ export async function qualifyCandidates(
         .eq("id", c.id);
       if (error) console.error(`candidate qualify upsert failed for ${c.name}:`, error.message);
     }
-
-    emit({
-      type: "log",
-      stage: "qualification",
-      message: `${c.name} — ${checks.filter((k) => k.ok).length}/${checks.length} site${checks.length === 1 ? "" : "s"} live`,
-    });
 
     qualified.push({ ...c, signals, portfolio_url: portfolioUrl });
   }
