@@ -10,6 +10,18 @@ export const DecisionMakerSchema = z.object({
 });
 export type DecisionMaker = z.infer<typeof DecisionMakerSchema>;
 
+export const BriefSchema = z.object({
+  id: z.string(),
+  decision_maker_id: z.string(),
+  decision_maker_name: z.string(),
+  decision_maker_email: z.string().nullable(),
+  subject: z.string(),
+  body: z.string(),
+  candidate_ids: z.array(z.string()),
+  generated_at: z.string(),
+});
+export type Brief = z.infer<typeof BriefSchema>;
+
 export const CandidateSchema = z.object({
   id: z.string(),
   name: z.string(),

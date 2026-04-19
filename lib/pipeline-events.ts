@@ -1,4 +1,4 @@
-import type { Candidate, DecisionMaker } from "@/lib/types";
+import type { Brief, Candidate, DecisionMaker } from "@/lib/types";
 
 export type StageId =
   | "decision_makers"
@@ -37,6 +37,7 @@ export type PipelineEvent =
       type: "result";
       decision_makers: DecisionMaker[];
       candidates: Candidate[];
+      briefs: Brief[];
     }
   | { type: "pipeline_done" }
   | { type: "pipeline_error"; error: string };

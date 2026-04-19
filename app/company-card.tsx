@@ -3,7 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { WatchlistCompany } from "@/lib/watchlist";
-import type { Candidate, DecisionMaker } from "@/lib/types";
+import type { Brief, Candidate, DecisionMaker } from "@/lib/types";
 import {
   STAGES,
   type PipelineEvent,
@@ -48,6 +48,7 @@ export default function CompanyCard({ company }: { company: WatchlistCompany }) 
   const [activeStage, setActiveStage] = useState<StageId | null>(null);
   const [decisionMakers, setDecisionMakers] = useState<DecisionMaker[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [briefs, setBriefs] = useState<Brief[]>([]);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [isRemoving, startRemove] = useTransition();
@@ -127,6 +128,7 @@ export default function CompanyCard({ company }: { company: WatchlistCompany }) 
       case "result":
         setDecisionMakers(event.decision_makers);
         setCandidates(event.candidates);
+        setBriefs(event.briefs);
         return;
       case "pipeline_done":
         setActiveStage(null);
@@ -150,6 +152,7 @@ export default function CompanyCard({ company }: { company: WatchlistCompany }) 
     setActiveStage(null);
     setDecisionMakers([]);
     setCandidates([]);
+    setBriefs([]);
     setFatalError(null);
     setExpanded(true);
 
@@ -272,7 +275,7 @@ export default function CompanyCard({ company }: { company: WatchlistCompany }) 
           )}
 
           {phase === "done" && (
-            <Results decisionMakers={decisionMakers} candidates={candidates} />
+            <Results decisionMakers={decisionMakers} candidates={candidates} briefs={briefs} />
           )}
         </>
       )}
@@ -372,7 +375,6 @@ function StageCard({
   isActive: boolean;
 }) {
   const { status, cache, logs, summary, error } = state;
-  const lastLog = logs[logs.length - 1];
 
   const border =
     status === "running"
@@ -500,9 +502,11 @@ function StageIndex({ index, status }: { index: number; status: StageStatus }) {
 function Results({
   decisionMakers,
   candidates,
+  briefs,
 }: {
   decisionMakers: DecisionMaker[];
   candidates: Candidate[];
+  briefs: Brief[];
 }) {
   return (
     <div className="space-y-6 border-t border-neutral-900 px-5 py-5">
@@ -615,6 +619,51 @@ function Results({
           </ul>
         )}
       </section>
+
+      {briefs.length > 0 && (
+        <section>
+          <div className="flex items-center gap-3">
+            <h4 className="text-xs uppercase tracking-wider text-neutral-500">
+              Outreach drafts ({briefs.length})
+            </h4>
+            <span className="rounded-full bg-amber-950/60 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-amber-300">
+              Simulated
+            </span>
+          </div>
+          <ul className="mt-3 space-y-4">
+            {briefs.map((b) => (
+              <li key={b.id} className="rounded-md border border-neutral-800 bg-neutral-900/60 p-4">
+                <div className="mb-2 space-y-0.5 text-xs text-neutral-500">
+                  <div>
+                    <span className="text-neutral-600">To: </span>
+                    {b.decision_maker_name}
+                    {b.decision_maker_email && (
+                      <span className="ml-1 text-neutral-600">&lt;{b.decision_maker_email}&gt;</span>
+                    )}
+                  </div>
+                  <div>
+                    <span className="text-neutral-600">Subject: </span>
+                    <span className="text-neutral-300">{b.subject}</span>
+                  </div>
+                </div>
+                <p className="whitespace-pre-wrap text-xs leading-relaxed text-neutral-400">
+                  {b.body}
+                </p>
+                <div className="mt-3 flex justify-end">
+                  <button
+                    onClick={() =>
+                      navigator.clipboard.writeText(`Subject: ${b.subject}\n\n${b.body}`)
+                    }
+                    className="rounded px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
+                  >
+                    Copy ↗
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }

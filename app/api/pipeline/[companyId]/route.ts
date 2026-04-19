@@ -2,6 +2,7 @@ import { getWatchlistCompany } from "@/lib/watchlist";
 import { findDecisionMakers } from "@/pipeline/decision-makers";
 import { sourceCandidates } from "@/pipeline/sourcing";
 import { qualifyCandidates } from "@/pipeline/qualification";
+import { generateBriefs } from "@/pipeline/brief";
 import type {
   PipelineEvent,
   PipelineEmitter,
@@ -62,16 +63,14 @@ export async function POST(
         send({ type: "stage_start", stage: "qualification" });
         const qualified = await qualifyCandidates(candidates, emit);
 
-        send({
-          type: "stage_skipped",
-          stage: "brief",
-          reason: "Stage 4 not yet implemented",
-        });
+        send({ type: "stage_start", stage: "brief" });
+        const briefs = await generateBriefs(qualified, decisionMakers, company, emit);
 
         send({
           type: "result",
           decision_makers: decisionMakers,
           candidates: qualified,
+          briefs,
         });
         send({ type: "pipeline_done" });
       } catch (err) {
