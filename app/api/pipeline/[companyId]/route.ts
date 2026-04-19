@@ -56,6 +56,7 @@ export async function POST(
 
         send({ type: "stage_start", stage: "decision_makers" });
         const decisionMakers = await findDecisionMakers(company, emit);
+        send({ type: "result", decision_makers: decisionMakers, candidates: [], briefs: [] });
 
         send({ type: "stage_start", stage: "sourcing" });
         const candidates = await sourceCandidates(company, emit);

@@ -305,7 +305,7 @@ export default function CompanyCard({ company }: { company: WatchlistCompany }) 
             </pre>
           )}
 
-          {phase === "done" && (
+          {(phase === "done" || decisionMakers.length > 0 || candidates.length > 0 || briefs.length > 0) && (
             <Results decisionMakers={decisionMakers} candidates={candidates} briefs={briefs} />
           )}
         </>
