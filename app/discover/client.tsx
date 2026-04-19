@@ -20,7 +20,7 @@ export default function DiscoverClient({
   );
 
   return (
-    <div className="space-y-12">
+    <div className="space-y-6">
       <ManualAdd
         onAdded={(id) => setAddedIds((s) => new Set(s).add(id))}
         onNavigate={() => router.refresh()}
@@ -49,6 +49,17 @@ export default function DiscoverClient({
   );
 }
 
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <span
+      className={`inline-block transition-transform text-neutral-500 ${open ? "rotate-90" : ""}`}
+      aria-hidden
+    >
+      ▸
+    </span>
+  );
+}
+
 function DiscoverPresetSection({
   title,
   description,
@@ -66,6 +77,7 @@ function DiscoverPresetSection({
   const [status, setStatus] = useState<string>("");
   const [matches, setMatches] = useState<CompanySearchResult[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
 
   function apply(event: DiscoverEvent) {
@@ -103,6 +115,7 @@ function DiscoverPresetSection({
     setStatus("Starting search…");
     setMatches([]);
     setError(null);
+    setExpanded(true);
 
     try {
       const res = await fetch(
@@ -158,20 +171,34 @@ function DiscoverPresetSection({
     }
   }
 
+  const hasBody = phase !== "idle" || error !== null;
+
   return (
-    <section className="space-y-4">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h2 className="text-sm uppercase tracking-wider text-neutral-500">
-            {title}
-          </h2>
-          <p className="mt-1 text-xs text-neutral-500">{description}</p>
-        </div>
+    <article className="overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950">
+      <header
+        className={`flex items-start justify-between gap-4 px-5 py-4 ${
+          expanded && hasBody ? "border-b border-neutral-900" : ""
+        }`}
+      >
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          className="flex min-w-0 flex-1 items-start gap-3 text-left"
+        >
+          <span className="mt-0.5"><Chevron open={expanded} /></span>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm uppercase tracking-wider text-neutral-500">
+              {title}
+            </h2>
+            <p className="mt-1 text-xs text-neutral-500">{description}</p>
+          </div>
+        </button>
         <button
           type="button"
           onClick={runSearch}
           disabled={phase === "running"}
-          className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-black disabled:opacity-50"
+          className="shrink-0 rounded-md bg-white px-3 py-1.5 text-sm font-medium text-black disabled:opacity-50"
         >
           {phase === "running"
             ? "Searching…"
@@ -179,36 +206,40 @@ function DiscoverPresetSection({
               ? "Run again"
               : "Run search"}
         </button>
-      </div>
+      </header>
 
-      {(phase === "running" || phase === "done") && status && (
-        <p className="flex items-center gap-2 text-xs text-neutral-400">
-          {phase === "running" && (
-            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-blue-400" />
+      {expanded && hasBody && (
+        <div className="space-y-4 px-5 py-4">
+          {(phase === "running" || phase === "done") && status && (
+            <p className="flex items-center gap-2 text-xs text-neutral-400">
+              {phase === "running" && (
+                <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-blue-400" />
+              )}
+              {status}
+            </p>
           )}
-          {status}
-        </p>
-      )}
 
-      {error && (
-        <pre className="whitespace-pre-wrap rounded-md bg-red-950/40 p-3 text-xs text-red-300">
-          {error}
-        </pre>
-      )}
+          {error && (
+            <pre className="whitespace-pre-wrap rounded-md bg-red-950/40 p-3 text-xs text-red-300">
+              {error}
+            </pre>
+          )}
 
-      {matches.length > 0 && (
-        <ul className="divide-y divide-neutral-900 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950">
-          {matches.map((c) => (
-            <MatchRow
-              key={c.crustdata_company_id}
-              company={c}
-              added={addedIds.has(String(c.crustdata_company_id))}
-              onAdd={() => onAddToWatchlist(String(c.crustdata_company_id))}
-            />
-          ))}
-        </ul>
+          {matches.length > 0 && (
+            <ul className="divide-y divide-neutral-900 overflow-hidden rounded-lg border border-neutral-800">
+              {matches.map((c) => (
+                <MatchRow
+                  key={c.crustdata_company_id}
+                  company={c}
+                  added={addedIds.has(String(c.crustdata_company_id))}
+                  onAdd={() => onAddToWatchlist(String(c.crustdata_company_id))}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
       )}
-    </section>
+    </article>
   );
 }
 
