@@ -49,6 +49,7 @@ export default function CompanyCard({ company }: { company: WatchlistCompany }) 
   const [decisionMakers, setDecisionMakers] = useState<DecisionMaker[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [fatalError, setFatalError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const [isRemoving, startRemove] = useTransition();
   const abortRef = useRef<AbortController | null>(null);
 
@@ -150,6 +151,7 @@ export default function CompanyCard({ company }: { company: WatchlistCompany }) 
     setDecisionMakers([]);
     setCandidates([]);
     setFatalError(null);
+    setExpanded(true);
 
     try {
       const res = await fetch(`/api/pipeline/${company.id}`, {
@@ -200,22 +202,46 @@ export default function CompanyCard({ company }: { company: WatchlistCompany }) 
       ? "Retry"
       : "Run pipeline";
 
+  const hasBody = phase !== "idle" || fatalError !== null;
+  const showBody = expanded && hasBody;
+
   return (
-    <article className="rounded-lg border border-neutral-800 bg-neutral-950">
-      <header className="flex items-start justify-between gap-4 border-b border-neutral-900 px-5 py-4">
-        <div>
-          <h3 className="text-lg font-medium">{company.name}</h3>
-          <p className="text-sm text-neutral-400">
-            {[
-              company.domain,
-              company.funding_stage,
-              company.headcount != null ? `${company.headcount} people` : null,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+    <article className="overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950">
+      <header
+        className={`flex items-start justify-between gap-4 px-5 py-4 ${
+          showBody ? "border-b border-neutral-900" : ""
+        }`}
+      >
+        <button
+          type="button"
+          onClick={() => hasBody && setExpanded((v) => !v)}
+          disabled={!hasBody}
+          aria-expanded={showBody}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left disabled:cursor-default"
+        >
+          <Chevron open={showBody} muted={!hasBody} />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h3 className="truncate text-lg font-medium">{company.name}</h3>
+              <StatusBadge
+                phase={phase}
+                activeStage={activeStage}
+                dmCount={decisionMakers.length}
+                candCount={candidates.length}
+              />
+            </div>
+            <p className="truncate text-sm text-neutral-400">
+              {[
+                company.domain,
+                company.funding_stage,
+                company.headcount != null ? `${company.headcount} people` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          </div>
+        </button>
+        <div className="flex shrink-0 items-center gap-2">
           <button
             onClick={handleRemove}
             disabled={isRemoving || phase === "running"}
@@ -233,20 +259,77 @@ export default function CompanyCard({ company }: { company: WatchlistCompany }) 
         </div>
       </header>
 
-      {(phase !== "idle" || activeStage) && (
-        <StageStrip stages={stages} activeStage={activeStage} />
-      )}
+      {showBody && (
+        <>
+          {(phase !== "idle" || activeStage) && (
+            <StageStrip stages={stages} activeStage={activeStage} />
+          )}
 
-      {fatalError && (
-        <pre className="mx-5 mb-5 whitespace-pre-wrap rounded-md bg-red-950/40 p-3 text-xs text-red-300">
-          {fatalError}
-        </pre>
-      )}
+          {fatalError && (
+            <pre className="mx-5 mb-5 whitespace-pre-wrap rounded-md bg-red-950/40 p-3 text-xs text-red-300">
+              {fatalError}
+            </pre>
+          )}
 
-      {phase === "done" && (
-        <Results decisionMakers={decisionMakers} candidates={candidates} />
+          {phase === "done" && (
+            <Results decisionMakers={decisionMakers} candidates={candidates} />
+          )}
+        </>
       )}
     </article>
+  );
+}
+
+function Chevron({ open, muted }: { open: boolean; muted: boolean }) {
+  return (
+    <span
+      className={`inline-block transition-transform ${
+        open ? "rotate-90" : ""
+      } ${muted ? "text-neutral-700" : "text-neutral-500"}`}
+      aria-hidden
+    >
+      ▸
+    </span>
+  );
+}
+
+function StatusBadge({
+  phase,
+  activeStage,
+  dmCount,
+  candCount,
+}: {
+  phase: PipelinePhase;
+  activeStage: StageId | null;
+  dmCount: number;
+  candCount: number;
+}) {
+  if (phase === "idle") return null;
+  if (phase === "running") {
+    const label =
+      activeStage === "decision_makers"
+        ? "Finding decision makers…"
+        : activeStage === "sourcing"
+        ? "Sourcing candidates…"
+        : "Running…";
+    return (
+      <span className="flex items-center gap-1.5 rounded-full bg-blue-950/60 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-blue-300">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-400" />
+        {label}
+      </span>
+    );
+  }
+  if (phase === "error") {
+    return (
+      <span className="rounded-full bg-red-950/60 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-red-300">
+        Error
+      </span>
+    );
+  }
+  return (
+    <span className="rounded-full bg-emerald-950/60 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-emerald-300">
+      {dmCount} DM · {candCount} candidates
+    </span>
   );
 }
 
