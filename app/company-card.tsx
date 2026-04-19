@@ -2,12 +2,15 @@
 
 import { useState } from "react";
 import type { DemoCompany } from "@/lib/demo-companies";
+import type { DecisionMaker } from "@/lib/types";
 
-type PipelineResult = {
-  status: "ok" | "stub";
-  brief?: string;
-  message?: string;
-};
+type PipelineResult =
+  | {
+      status: "ok";
+      company: { id: string; name: string };
+      decision_makers: DecisionMaker[];
+    }
+  | { status: "error"; error: string };
 
 export default function CompanyCard({ company }: { company: DemoCompany }) {
   const [state, setState] = useState<"idle" | "running" | "done" | "error">("idle");
@@ -18,10 +21,14 @@ export default function CompanyCard({ company }: { company: DemoCompany }) {
     setResult(null);
     try {
       const res = await fetch(`/api/pipeline/${company.id}`, { method: "POST" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setResult(await res.json());
-      setState("done");
-    } catch {
+      const data = (await res.json()) as PipelineResult;
+      setResult(data);
+      setState(data.status === "ok" ? "done" : "error");
+    } catch (err) {
+      setResult({
+        status: "error",
+        error: err instanceof Error ? err.message : String(err),
+      });
       setState("error");
     }
   }
@@ -44,13 +51,56 @@ export default function CompanyCard({ company }: { company: DemoCompany }) {
         </button>
       </div>
 
-      {result && (
-        <pre className="mt-4 whitespace-pre-wrap rounded-md bg-neutral-900 p-4 text-sm text-neutral-300">
-          {result.brief ?? result.message ?? JSON.stringify(result, null, 2)}
-        </pre>
+      {result?.status === "ok" && (
+        <div className="mt-5">
+          <h4 className="text-xs uppercase tracking-wider text-neutral-500">
+            Decision makers ({result.decision_makers.length})
+          </h4>
+          {result.decision_makers.length === 0 ? (
+            <p className="mt-2 text-sm text-neutral-400">
+              No C-level matches found.
+            </p>
+          ) : (
+            <ul className="mt-2 space-y-2">
+              {result.decision_makers.map((dm) => (
+                <li
+                  key={dm.id}
+                  className="flex items-baseline justify-between gap-3 text-sm"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div>
+                      <span className="font-medium">{dm.name}</span>
+                      {dm.title && (
+                        <span className="ml-2 text-neutral-400">{dm.title}</span>
+                      )}
+                    </div>
+                    {dm.email && (
+                      <div className="truncate text-xs text-neutral-500">
+                        {dm.email}
+                      </div>
+                    )}
+                  </div>
+                  {dm.linkedin_url && (
+                    <a
+                      href={dm.linkedin_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="shrink-0 text-xs text-neutral-500 hover:text-neutral-300"
+                    >
+                      LinkedIn ↗
+                    </a>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
-      {state === "error" && (
-        <p className="mt-4 text-sm text-red-400">Pipeline run failed.</p>
+
+      {result?.status === "error" && (
+        <pre className="mt-4 whitespace-pre-wrap rounded-md bg-red-950/40 p-3 text-xs text-red-300">
+          {result.error}
+        </pre>
       )}
     </article>
   );

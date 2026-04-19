@@ -13,7 +13,7 @@ npm install
 npm run dev
 ```
 
-Apply the Supabase schema in `db/schema.sql` to your project.
+Apply the Supabase schema with `supabase db push` (requires [Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started) linked to your project).
 
 ## Docs
 
