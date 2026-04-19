@@ -6,7 +6,7 @@ import {
 } from "@/lib/crustdata";
 import { supabase } from "@/lib/supabase";
 import { cacheCutoffIso } from "@/lib/config";
-import type { DemoCompany } from "@/lib/demo-companies";
+import type { WatchlistCompany } from "@/lib/watchlist";
 import type { Candidate } from "@/lib/types";
 import type { CompanyData, PersonProfile } from "@/lib/company-data";
 import type { PipelineEmitter } from "@/lib/pipeline-events";
@@ -68,7 +68,7 @@ async function getCachedCandidates(
   const { data: rows } = await db
     .from("candidates")
     .select(
-      "id, name, current_title, current_company, location, headline, linkedin_url, portfolio_url, portfolio_score, signals, enriched_at"
+      "id, name, current_title, current_company, location, headline, linkedin_url, websites, portfolio_url, portfolio_score, signals, enriched_at"
     )
     .in("id", ids);
 
@@ -167,7 +167,7 @@ async function enrichBatch(
 }
 
 export async function sourceCandidates(
-  company: DemoCompany,
+  company: WatchlistCompany,
   emit: PipelineEmitter = noop
 ): Promise<Candidate[]> {
   const cached = await getCachedCandidates(company.id);
@@ -243,6 +243,7 @@ export async function sourceCandidates(
       profile.social_handles?.professional_network_identifier?.profile_url ?? null;
     const currentCompany =
       enriched?.experience?.employment_details?.current?.[0]?.company_name ?? null;
+    const websites = enriched?.contact?.websites?.length ? enriched.contact.websites : null;
 
     const { error: upsertErr } = await db.from("candidates").upsert(
       {
@@ -253,6 +254,7 @@ export async function sourceCandidates(
         location: profile.basic_profile?.location?.raw ?? null,
         headline: profile.basic_profile?.headline ?? null,
         linkedin_url: linkedinUrl,
+        websites,
         portfolio_url: null,
         portfolio_score: null,
         signals: null,
@@ -282,6 +284,7 @@ export async function sourceCandidates(
       location: profile.basic_profile?.location?.raw ?? null,
       headline: profile.basic_profile?.headline ?? null,
       linkedin_url: linkedinUrl,
+      websites,
       portfolio_url: null,
       portfolio_score: null,
       signals: null,

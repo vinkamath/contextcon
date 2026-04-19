@@ -72,6 +72,36 @@ export type PersonEnrichResponse = Array<{
   matches: Array<{ confidence_score: number; person_data: PersonEnrichData }>;
 }>;
 
+// ---------- Company Search ----------
+
+export type CompanySearchFilter =
+  | { field: string; type: "=" | "!=" | ">" | "<" | "=>" | "=<" | "in" | "not_in" | "is_null" | "is_not_null" | "(.)" | "[.]"; value?: unknown }
+  | { op: "and" | "or"; conditions: CompanySearchFilter[] };
+
+export type CompanySearchRequest = {
+  filters?: CompanySearchFilter;
+  fields?: string[];
+  sorts?: Array<{ column: string; order: "asc" | "desc" }>;
+  limit?: number;
+  cursor?: string;
+};
+
+export type CompanySearchResult = {
+  crustdata_company_id: number;
+  basic_info?: { name?: string; primary_domain?: string; year_founded?: string };
+  headcount?: { total?: number };
+  funding?: { total_investment_usd?: number; last_round_type?: string; last_fundraise_date?: string };
+  locations?: { hq_country?: string; hq_city?: string; headquarters?: string };
+  taxonomy?: { professional_network_industry?: string };
+  roles?: { distribution?: Record<string, number> };
+};
+
+export type CompanySearchResponse = {
+  companies: CompanySearchResult[];
+  next_cursor: string | null;
+  total_count: number | null;
+};
+
 // ---------- Person Search (kept for later stages) ----------
 
 export type FilterCondition =
@@ -110,7 +140,7 @@ export type PersonSearchResponse = {
 // ---------- Endpoints ----------
 
 export const crustdata = {
-  companySearch: (body: unknown) => post<unknown>("/company/search", body),
+  companySearch: (body: CompanySearchRequest) => post<CompanySearchResponse>("/company/search", body),
   companyEnrich: (body: CompanyEnrichRequest) =>
     post<CompanyEnrichResponse>("/company/enrich", body),
   personSearch: (body: PersonSearchRequest) =>

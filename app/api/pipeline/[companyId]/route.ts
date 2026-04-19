@@ -1,4 +1,4 @@
-import { DEMO_COMPANIES } from "@/lib/demo-companies";
+import { getWatchlistCompany } from "@/lib/watchlist";
 import { findDecisionMakers } from "@/pipeline/decision-makers";
 import { sourceCandidates } from "@/pipeline/sourcing";
 import type {
@@ -14,7 +14,6 @@ export async function POST(
   { params }: { params: Promise<{ companyId: string }> }
 ) {
   const { companyId } = await params;
-  const company = DEMO_COMPANIES.find((c) => c.id === companyId);
 
   const encoder = new TextEncoder();
 
@@ -24,8 +23,23 @@ export async function POST(
         controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
       };
 
+      let company;
+      try {
+        company = await getWatchlistCompany(companyId);
+      } catch (err) {
+        send({
+          type: "pipeline_error",
+          error: err instanceof Error ? err.message : String(err),
+        });
+        controller.close();
+        return;
+      }
+
       if (!company) {
-        send({ type: "pipeline_error", error: `Unknown company: ${companyId}` });
+        send({
+          type: "pipeline_error",
+          error: `Company ${companyId} not on watchlist`,
+        });
         controller.close();
         return;
       }

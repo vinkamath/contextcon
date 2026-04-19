@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
-import type { DemoCompany } from "@/lib/demo-companies";
+import { useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import type { WatchlistCompany } from "@/lib/watchlist";
 import type { Candidate, DecisionMaker } from "@/lib/types";
 import {
   STAGES,
@@ -40,14 +41,26 @@ function emptyStage(): StageState {
   };
 }
 
-export default function CompanyCard({ company }: { company: DemoCompany }) {
+export default function CompanyCard({ company }: { company: WatchlistCompany }) {
+  const router = useRouter();
   const [phase, setPhase] = useState<PipelinePhase>("idle");
   const [stages, setStages] = useState<Record<StageId, StageState>>(initialStages);
   const [activeStage, setActiveStage] = useState<StageId | null>(null);
   const [decisionMakers, setDecisionMakers] = useState<DecisionMaker[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [fatalError, setFatalError] = useState<string | null>(null);
+  const [isRemoving, startRemove] = useTransition();
   const abortRef = useRef<AbortController | null>(null);
+
+  function handleRemove() {
+    if (!confirm(`Remove ${company.name} from watchlist?`)) return;
+    startRemove(async () => {
+      const res = await fetch(`/api/watchlist?id=${encodeURIComponent(company.id)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) router.refresh();
+    });
+  }
 
   function apply(event: PipelineEvent) {
     switch (event.type) {
@@ -193,16 +206,31 @@ export default function CompanyCard({ company }: { company: DemoCompany }) {
         <div>
           <h3 className="text-lg font-medium">{company.name}</h3>
           <p className="text-sm text-neutral-400">
-            {company.domain} · {company.funding_stage} · {company.headcount} people
+            {[
+              company.domain,
+              company.funding_stage,
+              company.headcount != null ? `${company.headcount} people` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </p>
         </div>
-        <button
-          onClick={runPipeline}
-          disabled={phase === "running"}
-          className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-black disabled:opacity-50"
-        >
-          {runLabel}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleRemove}
+            disabled={isRemoving || phase === "running"}
+            className="rounded-md border border-neutral-800 px-2.5 py-1.5 text-xs text-neutral-400 hover:border-neutral-700 hover:text-neutral-200 disabled:opacity-50"
+          >
+            {isRemoving ? "Removing…" : "Remove"}
+          </button>
+          <button
+            onClick={runPipeline}
+            disabled={phase === "running"}
+            className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-black disabled:opacity-50"
+          >
+            {runLabel}
+          </button>
+        </div>
       </header>
 
       {(phase !== "idle" || activeStage) && (
@@ -470,16 +498,30 @@ function Results({
                     </div>
                   )}
                 </div>
-                {c.linkedin_url && (
-                  <a
-                    href={c.linkedin_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="shrink-0 text-xs text-neutral-500 hover:text-neutral-300"
-                  >
-                    LinkedIn ↗
-                  </a>
-                )}
+                <div className="flex shrink-0 items-center gap-2">
+                  {c.linkedin_url && (
+                    <a
+                      href={c.linkedin_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs text-neutral-500 hover:text-neutral-300"
+                    >
+                      LinkedIn ↗
+                    </a>
+                  )}
+                  {c.websites?.slice(0, 2).map((url) => (
+                    <a
+                      key={url}
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="max-w-[120px] truncate text-xs text-neutral-500 hover:text-neutral-300"
+                      title={url}
+                    >
+                      {new URL(url).hostname.replace(/^www\./, "")} ↗
+                    </a>
+                  ))}
+                </div>
               </li>
             ))}
             {candidates.length > 10 && (

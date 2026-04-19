@@ -18,6 +18,7 @@ export const CandidateSchema = z.object({
   location: z.string().nullable(),
   headline: z.string().nullable(),
   linkedin_url: z.string().nullable(),
+  websites: z.array(z.string()).nullable(),
   portfolio_url: z.string().nullable(),
   portfolio_score: z.number().nullable(),
   signals: z.unknown().nullable(),

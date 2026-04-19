@@ -4,7 +4,7 @@ import {
 } from "@/lib/crustdata";
 import { supabase } from "@/lib/supabase";
 import { cacheCutoffIso } from "@/lib/config";
-import type { DemoCompany } from "@/lib/demo-companies";
+import type { WatchlistCompany } from "@/lib/watchlist";
 import type { DecisionMaker } from "@/lib/types";
 import type { CompanyData } from "@/lib/company-data";
 import type { PipelineEmitter } from "@/lib/pipeline-events";
@@ -23,7 +23,7 @@ function ageLabel(iso: string | null | undefined): string {
 }
 
 async function getCompanyData(
-  company: DemoCompany,
+  company: WatchlistCompany,
   emit: PipelineEmitter
 ): Promise<CompanyData> {
   const db = supabase();
@@ -135,7 +135,7 @@ async function getPersonEnrich(
 }
 
 export async function findDecisionMakers(
-  company: DemoCompany,
+  company: WatchlistCompany,
   emit: PipelineEmitter = noop
 ): Promise<DecisionMaker[]> {
   const companyData = await getCompanyData(company, emit);
