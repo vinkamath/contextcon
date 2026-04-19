@@ -1,5 +1,6 @@
 export type DemoCompany = {
   id: string;
+  slug: string; // matches filename in data/{slug}.json
   name: string;
   domain: string;
   funding_stage: "pre_seed" | "seed" | "series_a";
@@ -10,6 +11,7 @@ export type DemoCompany = {
 export const DEMO_COMPANIES: DemoCompany[] = [
   {
     id: "6036032",
+    slug: "crustdata",
     name: "Crustdata",
     domain: "crustdata.com",
     funding_stage: "seed",
@@ -17,6 +19,7 @@ export const DEMO_COMPANIES: DemoCompany[] = [
   },
   {
     id: "demo_company_2",
+    slug: "demo_company_2",
     name: "Company B",
     domain: "company-b.example",
     funding_stage: "pre_seed",
