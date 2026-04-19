@@ -1,0 +1,6 @@
+{
+  "cache_ttl_days": {
+    "company": 30,
+    "person": 30
+  }
+}
